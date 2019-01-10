@@ -47,16 +47,43 @@ filteredData <- select(filteredData, -Ticket)
 # Explore the obtained dataset
 str(filteredData)
 
-# Discretize the corresponding variables and check the type
+# Check posible discrete variables
 colsToFactor<-c("Survived","Pclass","Sex","Embarked")
+for (i in colsToFactor){
+  print(i)
+  print(summary(as.factor(filteredData[,i])))
+}
+
+# Discretize the corresponding variables and check the type
 for (i in colsToFactor){
     filteredData[,i] <- as.factor(filteredData[,i])
 }
 str(filteredData)
 
+# Descriptive analysis
+for (i in colsToFactor){
+  print(i)
+  print(table(filteredData[,i])*100/NROW(filteredData[,i]))
+}
+
 # Explore SibSp and Parch
 summary(as.factor(filteredData$SibSp))
 summary(as.factor(filteredData$Parch))
+
+colsToFactor<-c("SibSp","Parch")
+for (i in colsToFactor){
+  print(i)
+  print(table(filteredData[,i])*100/NROW(filteredData[,i]))
+}
+
+# Remaining descriptive analysis
+colsToDescrive<-c("Age","Fare")
+for (i in colsToDescrive){
+  print(i)
+  print(summary(filteredData[,i]))
+  print('SD')
+  print(sd(filteredData[,i], na.rm=TRUE))
+}
 
 #####
 # Data cleaning
@@ -70,7 +97,7 @@ summary(as.factor(filteredData$Parch))
 colSums(is.na(filteredData))
 colSums(filteredData=="", na.rm=T)
 colSums(filteredData==" ", na.rm=T)
-colSums(filteredData<0, na.rm=T)
+colSums(filteredData<0, na.rm=)Tt
 
 # Check levels mismatch
 levels(filteredData$Survived)
@@ -84,20 +111,26 @@ summary(filteredData$Embarked)
 View(filteredData)
 filteredData <- select(filteredData, -Cabin)
 
-# Assign NAs to empty values to use KNN imputation
+# Assign NAs and normalize data to empty values to use KNN imputation
+# Embarked
 filteredData$Embarked[filteredData$Embarked==""]=NA
-# Assing values based on KNN
-filteredData <- kNN(filteredData, variable = c("Embarked", "Age"))
+normalizedData <- filteredData
+normalizedData$Age <- scale(normalizedData$Age, center=FALSE)
+normalizedData$Fare <- scale(normalizedData$Fare, center=FALSE)
+normalizedData <- kNN(normalizedData, variable = c("Embarked"))
+filteredData$Embarked <- normalizedData$Embarked
+# Age
+normalizedData <- filteredData
+normalizedData$Fare <- scale(normalizedData$Fare, center=FALSE)
+normalizedData <- kNN(normalizedData, variable = c("Age"))
+filteredData$Age <- normalizedData$Age
+
 # Check the assigned values make sense
 filteredData$Embarked[62]
 filteredData$Embarked[830]
 filteredData$Age[18]
 filteredData$Age[30]
 filteredData$Age[236]
-
-# Remove generated attributes from the KNN imputation
-filteredData <- select(filteredData, -Embarked_imp)
-filteredData <- select(filteredData, -Age_imp)
 
 # Crosscheck that there are no empty values
 colSums(is.na(filteredData))
@@ -111,11 +144,24 @@ colSums(filteredData<0, na.rm=T)
 
 # Create attribute Family Size (FSize)
 filteredData$FSize <- filteredData$SibSp + filteredData$Parch + 1
-filteredData$SibSp <- as.factor(filteredData$SibSp)
-filteredData$Parch <- as.factor(filteredData$Parch)
 
 # Check and discretize the new attribute
 summary(as.factor(filteredData$FSize))
+
+# Generate new gruoups
+filteredData$SibSp[filteredData$SibSp>2]=2
+summary(as.factor(filteredData$SibSp))
+table(filteredData$SibSp)*100/NROW(filteredData$SibSp)
+filteredData$Parch[filteredData$Parch>2]=2
+summary(as.factor(filteredData$Parch))
+table(filteredData$Parch)*100/NROW(filteredData$Parch)
+filteredData$FSize[filteredData$FSize>3]=3
+summary(as.factor(filteredData$FSize))
+table(filteredData$FSize)*100/NROW(filteredData$FSize)
+
+# Discretize attributes
+filteredData$SibSp <- as.factor(filteredData$SibSp)
+filteredData$Parch <- as.factor(filteredData$Parch)
 filteredData$FSize <- as.factor(filteredData$FSize)
 
 #
@@ -151,15 +197,15 @@ sd(filteredData$Fare)
 filteredData$Fare[filteredData$Fare == 0 | filteredData$Fare > 500]=NA
 filteredData <- kNN(filteredData, variable = c("Fare"))
 
-####
-# Check normality and homogeneity of variance
-####
-
 # Check graphically the results
 ggplot(data=filteredData[filteredData$Fare_imp==TRUE,], aes(x=Fare))+geom_histogram(binwidth = 10)+facet_wrap(~Pclass)
 
 # Remove imputation generated attribute
 filteredData <- select(filteredData, - Fare_imp)
+
+####
+# Check normality and homogeneity of variance
+####
 
 # Get density and QQ plots
 ggdensity(filteredData$Age, main="Densidad", xlab = "Age")
@@ -237,7 +283,9 @@ filteredData$FareFactor[filteredData$Fare >= 100] = "Ridiciulous"
 filteredData$FareFactor <- as.factor(filteredData$FareFactor)
 
 # Plot the new attributes to crosscheck
+filteredData$AgeFactor <- factor(filteredData$AgeFactor,levels = c("Baby", "Kid", "Young", "Adult", "Elder"))
 ggplot(data=filteredData,aes(x=AgeFactor,fill=Survived))+geom_bar(position="fill")
+filteredData$FareFactor <- factor(filteredData$FareFactor,levels = c("Cheap", "Medium", "Expensive", "Ridiculous"))
 ggplot(data=filteredData,aes(x=FareFactor,fill=Survived))+geom_bar(position="fill")
 
 # Generate dataset, binarize data and run Apriori
