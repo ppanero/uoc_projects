@@ -195,13 +195,13 @@ lowPrice
 sd(filteredData$Fare)
 # Mark as NA the extreme values an imputate based on KNN
 filteredData$Fare[filteredData$Fare == 0 | filteredData$Fare > 500]=NA
-filteredData <- kNN(filteredData, variable = c("Fare"))
+normalizedData <- filteredData
+normalizedData$Age <- scale(normalizedData$Age, center=FALSE)
+normalizedData <- kNN(normalizedData, variable = c("Fare"))
+filteredData$Fare <- normalizedData$Fare
 
 # Check graphically the results
-ggplot(data=filteredData[filteredData$Fare_imp==TRUE,], aes(x=Fare))+geom_histogram(binwidth = 10)+facet_wrap(~Pclass)
-
-# Remove imputation generated attribute
-filteredData <- select(filteredData, - Fare_imp)
+ggplot(data=normalizedData[normalizedData$Fare_imp==TRUE,], aes(x=Fare))+geom_histogram(binwidth = 10)+facet_wrap(~Pclass)
 
 ####
 # Check normality and homogeneity of variance
@@ -229,13 +229,16 @@ fligner.test(Age ~ Fare, filteredData)
 #
 
 # Check correlation of categorical variables
-corr_matrix <- matrix(nc = 2, nr = 0) 
-colnames(corr_matrix) <- c("variable", "p-value")
+corr_matrix <- matrix(nc = 4, nr = 0) 
+colnames(corr_matrix) <- c("variable", "x-square", "df", "p-value")
 categoricas <- select(filteredData, -Survived, -Age, -Fare)
 for(i in 1:(ncol(categoricas))) {
-    pair = matrix(ncol = 2, nrow = 1)
+    pair = matrix(ncol = 4, nrow = 1)
     pair[1][1] = colnames(categoricas)[i]
-    pair[2][1] = chisq.test(filteredData$Survived, categoricas[,i])$p.value
+    chi_square = chisq.test(filteredData$Survived, categoricas[,i], correct=FALSE)
+    pair[2][1] = chi_square$statistic
+    pair[3][1] = chi_square$parameter
+    pair[4][1] = chi_square$p.value
     corr_matrix <- rbind(corr_matrix, pair)
 }
 
@@ -293,6 +296,7 @@ asociationData <- select(filteredData, -Age, -Fare)
 mba <- as(asociationData, "transactions")
 summary(mba)
 
+#Survived
 rules <- apriori(mba, parameter = list(supp = 0.05, conf = 0.95), appearance=list(rhs='Survived=1',default='lhs'))
 
 # Sort based on confidence and inspect rules
@@ -331,3 +335,10 @@ ggplot(data=filteredData,aes(x=FSize,fill=Survived))+geom_bar(position="fill")
 # Embarked
 ggplot(data=filteredData,aes(x=Embarked,fill=Survived))+geom_bar()
 ggplot(data=filteredData,aes(x=Embarked,fill=Survived))+geom_bar(position="fill")
+
+####
+# Hypothesis test
+####
+
+wilcox.test(Age~Survived, filteredData)
+wilcox.test(Fare~Survived, filteredData)
