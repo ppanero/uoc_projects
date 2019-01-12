@@ -97,7 +97,7 @@ for (i in colsToDescrive){
 colSums(is.na(filteredData))
 colSums(filteredData=="", na.rm=T)
 colSums(filteredData==" ", na.rm=T)
-colSums(filteredData<0, na.rm=)Tt
+colSums(filteredData<0, na.rm=T)
 
 # Check levels mismatch
 levels(filteredData$Survived)
@@ -340,5 +340,16 @@ ggplot(data=filteredData,aes(x=Embarked,fill=Survived))+geom_bar(position="fill"
 # Hypothesis test
 ####
 
+# Cast to numeric the factors
+filteredData$PclassNum <- as.numeric(levels(filteredData$Pclass))[filteredData$Pclass]
+filteredData$FSizeNum <- as.numeric(levels(filteredData$FSize))[filteredData$FSize]
+filteredData$SexNum <- NA
+filteredData$SexNum[filteredData$Sex == 'male']=1
+filteredData$SexNum[filteredData$Sex == 'female']=0
+
+# Run Mann-Whitney tests
+
 wilcox.test(Age~Survived, filteredData)
-wilcox.test(Fare~Survived, filteredData)
+wilcox.test(SexNum~Survived, filteredData)
+wilcox.test(PclassNum~Survived, filteredData)
+wilcox.test(FSizeNum~Survived, filteredData)
