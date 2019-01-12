@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import csv
+import unidecode
 
 from datetime import date, datetime
 
@@ -9,6 +10,9 @@ from datetime import date, datetime
 
 # Absolute path where the CVS files are located
 FILE_PATH = "gourmetdb"
+
+# Absolut path where the processed CSV files are written
+OUTPUT_PATH = "denorm_gourmetdb"
 
 # Null string
 NULL_STRING = "NULL"
@@ -61,7 +65,8 @@ def join_error(orig_dataset, extra_dataset):
 
 
 def strip_string(string):
-    aux = string.strip('"').replace('"\n', '').strip()
+    aux = string.strip('"').replace('"\n', '').strip().replace(' ', '-')
+    aux = unidecode.unidecode(aux.decode('utf-8'))
     return NULL_STRING if not aux else aux
 
 
@@ -124,7 +129,7 @@ def generate_dict(dataset_name, dataset, columns):
 
 
 def write_csv(filename, dataset):
-    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename),
+    with open('{path}/{filename}'.format(path=OUTPUT_PATH, filename=filename),
               'wb') as output:
         rows = dataset.values()
         writer = csv.DictWriter(output, rows[0].keys())
@@ -196,7 +201,7 @@ COLUMNS_SECTION = ['nombre_seccion', 'descripcion_seccion']
 COLUMNS_FAMILY = ['nombre_familia', 'descripcion_familia', 'seccion_familia']
 COLUMNS_SUBFAMILY = ['nombre_subfamilia', 'descripcion_subfamilia',
                      'familia_subfamilia']
-COLUMNS_PRODUCT = ['codigo_producto', 'descripccion_producto',
+COLUMNS_PRODUCT = ['codigo_producto', 'descripcion_producto',
                    'pais_producto', 'coste_producto', 'precio_venta_producto',
                    'tipo_unidad_producto', 'subfamilia_producto',
                    'marca_producto', 'codigo_proveedor_producto']
@@ -312,11 +317,11 @@ def read_provider(filename):
 
 COUNTRY_MAPPING = {
     'France': 'Francia',
-    'SW4': 'Reino Unido',
-    'SW3': 'Reino Unido',
-    'USA': 'Estados Unidos',
+    'SW4': 'Reino-Unido',
+    'SW3': 'Reino-Unido',
+    'USA': 'Estados-Unidos',
     'Germany': 'Alemania',
-    'Belgium': 'Bélgica',
+    'Belgium': 'Belgica',
     'Holland': 'Holanda',
     'Denmark': 'Dinamarca',
     'Sweden': 'Suecia',
@@ -328,7 +333,7 @@ COUNTRY_MAPPING = {
 def add_provider_attributes(dataset):
     COLUMNS_PROVIDER.append("pais_proveedor")
     for attributes in dataset.values():
-        parts = attributes[2].split(' ')
+        parts = attributes[2].split('-')
         # Always the last part of the address
         country = strip_string(parts[len(parts) - 1])
         country = COUNTRY_MAPPING.get(country, country)
