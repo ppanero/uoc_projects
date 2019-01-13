@@ -196,7 +196,6 @@ def join_check(join_dataset, orig_dataset, orig_dataset_columns,
 ### PRODUCT ENTITY DENORMALIZATION ###
 ######################################
 
-# Column names
 COLUMNS_SECTION = ['nombre_seccion', 'descripcion_seccion']
 COLUMNS_FAMILY = ['nombre_familia', 'descripcion_familia', 'seccion_familia']
 COLUMNS_SUBFAMILY = ['nombre_subfamilia', 'descripcion_subfamilia',
@@ -210,6 +209,9 @@ COLUMNS_PROVIDER = ['codigo_proveedor', 'nombre_proveedor',
                     'telefono_proveedor', 'periodo_pago_proveedor',
                     'pago_pendiente_proveedor', 'tipo_proveedor_proveedor',
                     'alcance_proveedor']
+# Region and country are needed to test the providers FK
+COLUMNS_REGION = ['nombre_region', 'continente_region']
+COLUMNS_COUNTRY = ['nombre_pais', 'extension_pais', 'poblacion_pais', 'region_pais']
 
 
 def read_sections(filename):
@@ -273,6 +275,53 @@ def read_subfamilies(filename):
             description = strip_string(parts[1])  # NULLABLE
             family = strip_string(parts[2])
             value = [description, family]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+def read_regions(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            if len(parts) != len(COLUMNS_REGION):
+                line_length_error(filename, line, len(parts), len(COLUMNS_REGION))
+                continue
+            key = strip_string(parts[0])
+            value = [strip_string(parts[1])]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+def read_countries(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            if len(parts) != len(COLUMNS_COUNTRY):
+                line_length_error(filename, line, len(parts), len(COLUMNS_COUNTRY))
+                continue
+            key = strip_string(parts[0])
+            extension = int(strip_number(parts[1]))
+            poblacion = int(strip_number(parts[2]))
+            region = strip_string(parts[3])
+            value = [extension, poblacion, region]
             if key in data.keys():
                 repeated_key_error(filename, key, data[key], value)
             data[key] = value
@@ -371,6 +420,13 @@ def read_product(filename):
         return data
 
 
+def add_country_attributes(dataset):
+    COLUMNS_COUNTRY.append("densidad_pobl_pais")  # In people/km2
+    for attributes in dataset.values():
+        density = round(float(attributes[1]) / attributes[0], 1)
+        attributes.append(density)
+
+
 def add_product_attributes(dataset):
     COLUMNS_PRODUCT.append("beneficio_producto")
     for attributes in dataset.values():
@@ -404,10 +460,27 @@ if not join_check(d_subfamilies, subfamilies, COLUMNS_SUBFAMILY,
                   COLUMNS_FAMILY + COLUMNS_SECTION):
     join_error('Subfamilia', 'Familia')
 
+# Region
+regions = read_regions('regiongeografica.cvs')
+
+# Country
+countries = read_countries('pais.cvs')
+add_country_attributes(countries)
+test_key_existence(regions.keys(), 'region', countries, 'pais.cvs', 2)
+
+# Generate dictionaries for the datasets
+d_regions = generate_dict('region', regions, COLUMNS_REGION)
+d_countries = generate_dict('pais', countries, COLUMNS_COUNTRY)
+
+# Denormalize subfamily into product
+join_datasets(d_countries, d_regions, 'region_pais')
+if not join_check(d_countries, countries, COLUMNS_COUNTRY, COLUMNS_REGION):
+    join_error('Pais', 'Region')
+
 # Provider
 providers = read_provider('proveedor.cvs')
 add_provider_attributes(providers)
-#test_key_existence(countries.keys(), 'pais', providers, 'proveedor.cvs', 8)
+test_key_existence(countries.keys(), 'pais', providers, 'proveedor.cvs', 8)
 
 # Product
 products = read_product('producto.cvs')
@@ -423,7 +496,7 @@ d_products = generate_dict('producto', products, COLUMNS_PRODUCT)
 join_datasets(d_products, d_subfamilies, 'subfamilia_producto')
 if not join_check(d_products, products, COLUMNS_PRODUCT,
                   COLUMNS_SUBFAMILY + COLUMNS_FAMILY + COLUMNS_SECTION):
-    join_error('Product', 'Subfamilia')
+    join_error('Producto', 'Subfamilia')
 
 # Generate dictionaries for the datasets
 d_providers = generate_dict('proveedor', providers, COLUMNS_PROVIDER)
@@ -437,27 +510,142 @@ if not join_check(d_products, products, COLUMNS_PRODUCT,
 
 write_csv('denorm_products.csv', d_products)
 
+# ####################################
+# ### ORDER ENTITY DENORMALIZATION ###
+# ####################################
+
+COLUMNS_SHOP = ['nombre_tienda', 'direccion_tienda', 'superficie_tienda',
+                  'formato_tienda', 'pais_tienda', 'tipo_zona_tienda']
+COLUMNS_ORDER = ['codigo_pedido', 'tienda_pedido', 'codigo_producto_pedido', 
+                 'precio_compra_pedido', 'cantidad_solicitada_pedido', 
+                 'fecha_solicitud_pedido', 'cantidad_entregada_pedido', 
+                 'fecha_entrega_pedido']
+
+def read_shops(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            parts[1] = '{0}{1}'.format(parts[1], parts[2])  # Concatenate address
+            parts.pop(2)  # Delete the remainig duplicated part of the address
+            if len(parts) != len(COLUMNS_SHOP):
+                line_length_error(filename, line, len(parts), len(COLUMNS_SHOP))
+                continue
+            key = strip_string(parts[0])
+            address = strip_string(parts[1])
+            surface = float(strip_number(parts[2]))
+            shop_format = strip_string(parts[3])
+            country = strip_string(parts[4])
+            zone_type = strip_string(parts[5])
+
+            value = [address, surface, shop_format, country, zone_type]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+def read_orders(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            if len(parts) != len(COLUMNS_ORDER):
+                line_length_error(filename, line, len(parts), len(COLUMNS_ORDER))
+                continue
+
+            key = strip_string(parts[0])
+            shop_name = strip_string(parts[1])
+            product_code = strip_string(parts[2])
+            order_price = strip_number(parts[3])
+            order_amount = int(strip_number(parts[4]))
+            order_date = strip_date(parts[5])
+            delivered_amount = int(strip_number(parts[6]))
+            delivered_date = strip_date(parts[7])
+            value = [shop_name, product_code, order_price, order_amount, order_date, delivered_amount, delivered_date]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+""" Add attributes functions """
+
+def add_order_attributes(dataset):
+    COLUMNS_ORDER.append("excfal_pedido")  # exceso o falta de mercancia entregada
+    for attributes in dataset.values():
+        excfal = attributes[5] - attributes[3]
+        attributes.append(excfal)
+    COLUMNS_ORDER.append("tiempo_entrega_pedido")  # Tiempo transcurrido desde el pedido hasta la entrega
+    for attributes in dataset.values():
+        # Fix years 1900 
+        if attributes[6].year == 1900:
+            attributes[6] = attributes[6].replace(attributes[4].year)
+        # Calculate difference of dates in days
+        delay = (attributes[6] - attributes[4]).days
+        attributes.append(delay)
+
+
+# Shops
+shops = read_shops('tienda.cvs')
+test_key_existence(countries.keys(), 'pais', shops, 'tienda.cvs', 3)
+
+# Generate dictionaries for the datasets
+d_shops = generate_dict('tienda', shops, COLUMNS_SHOP)
+
+# Denormalize countries into shops
+join_datasets(d_shops, d_countries, 'pais_tienda')
+if not join_check(d_shops, shops, COLUMNS_SHOP,
+                  COLUMNS_COUNTRY + COLUMNS_REGION):
+    join_error('Tienda', 'Pais')
+
+# Order
+orders = read_orders('pedido.cvs')
+add_order_attributes(orders)
+test_key_existence(shops.keys(), 'tienda', orders, 'pedido.cvs', 0)
+test_key_existence(products.keys(), 'producto', orders, 'pedido.cvs', 1)
+
+# Generate dictionaries for the datasets
+d_orders = generate_dict('pedido', orders, COLUMNS_ORDER)
+
+# Denormalize shops into orders
+join_datasets(d_orders, d_shops, 'tienda_pedido')
+if not join_check(d_orders, orders, COLUMNS_ORDER,
+                  COLUMNS_SHOP + COLUMNS_COUNTRY + COLUMNS_REGION):
+    join_error('Pedido', 'Tienda')
+
+# Denormalize products into orders
+join_datasets(d_orders, d_products, 'codigo_producto_pedido')
+if not join_check(d_orders, orders, COLUMNS_ORDER,
+                  COLUMNS_SHOP + COLUMNS_COUNTRY + COLUMNS_REGION +
+                  COLUMNS_PRODUCT + COLUMNS_PROVIDER + COLUMNS_SUBFAMILY +
+                  COLUMNS_FAMILY + COLUMNS_SECTION):
+    join_error('Pedido', 'Tienda')
+
+write_csv('denorm_orders.csv', d_orders)
+
 # ######################################
 # ### XXXXXXX ENTITY DENORMALIZATION ###
 # ######################################
-#
-# COLUMNS_TIENDA = ['nombre_tienda', 'direccion_tienda', 'superficie_tienda',
-#                   'formato_tienda', 'pais_tienda', 'tipo_zona_tienda']
-#
-#
 # COLUMNS_PROMOCION = ['nombre', 'tipo', 'coste', 'fecha inicio', 'fecha fin',
 #                      'codigo producto', 'familia', 'seccion', 'tienda', 'region', 'pais']
 #
 # COLUMNS_CLIENTE = ['codigo', 'nombre', 'sexo', 'fecha nacimiento', 'estado civil', 'direccion',
 #                    'profesion', 'numero hijos', 'region', 'nacionalidad', 'total compras', ' puntos acumulados']
 #
-
-# COLUMNS_PEDIDO = ['codigo', 'nombre', 'codigo producto', 'precio compra',
-#                   'cantidad solicitada', 'fecha solicitud', 'cantidad entregada', 'fecha entrega']
 #
-# COLUMNS_REGION = ['nombre_region', 'continente_region']
-#
-# COLUMNS_PAIS = ['nombre_pais', 'extension_pais', 'poblacion_pais', 'region_pais']
 #
 # COLUMNS_CABECERA_TICKET = ['codigo de venta', 'tienda', 'fecha', 'hora',
 #                            'forma pago', 'codigo cliente', 'importe total', 'total unidades', 'puntos ticket']
@@ -465,112 +653,12 @@ write_csv('denorm_products.csv', d_products)
 # COLUMNS_LINEA_TICKET = ['codigo', 'codigo venta', 'tienda', 'codigo producto',
 #                         'cantidad', 'precio venta', 'promocion', 'codigo cabecera']
 #
-
-# # File names:
-# FILENAMES = {
-#     'tienda.cvs': COLUMNS_TIENDA,
-#     'producto.cvs': COLUMNS_PRODUCTO,
-#     'subfamilia.cvs': COLUMNS_SUBFAMILIA,
-#     'promocion.cvs': COLUMNS_PROMOCION,
-#     'seccion.cvs': COLUMNS_SECCION,
-#     'familia.cvs': COLUMNS_FAMILIA,
-#     'cliente.cvs': COLUMNS_CLIENTE,
-#     'proveedor.cvs': COLUMNS_PROVEEDOR,
-#     'pedido.cvs': COLUMNS_PEDIDO,
-#     'regiongeografica.cvs': COLUMNS_REGION,
-#     'pais.cvs': COLUMNS_PAIS,
-#     'cebeceraticket.cvs': COLUMNS_CABECERA_TICKET,
-#     'lineticket.cvs': COLUMNS_LINEA_TICKET,
-# }
 #
 #
 #
 # """ Read files """
-#
-#
-# def read_region(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_REGION):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_REGION))
-#                 continue
-#             key = strip_string(parts[0])
-#             value = [strip_string(parts[1])]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
-# def read_pais(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_PAIS):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_PAIS))
-#                 continue
-#             key = strip_string(parts[0])
-#             extension = int(strip_number(parts[1]))
-#             poblacion = int(strip_number(parts[2]))
-#             region = strip_string(parts[3])
-#             value = [extension, poblacion, region]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
-# def read_tienda(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             parts[1] = '{0}{1}'.format(parts[1], parts[2])  # Concatenate address
-#             parts.pop(2)  # Delete the remainig duplicated part of the address
-#             if len(parts) != len(COLUMNS_TIENDA):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_TIENDA))
-#                 continue
-#             key = strip_string(parts[0])
-#             address = strip_string(parts[1])
-#             surface = float(strip_number(parts[2]))
-#             shop_format = strip_string(parts[3])
-#             country = strip_string(parts[4])
-#             zone_type = strip_string(parts[5])
-#
-#             value = [address, surface, shop_format, country, zone_type]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
-#
-#
-#
-#
 # def read_promocion(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
+#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
 #         data = {}
 #         lines = 0
 #         for line in content:
@@ -605,7 +693,7 @@ write_csv('denorm_products.csv', d_products)
 #
 #
 # def read_cliente(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
+#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
 #         data = {}
 #         lines = 0
 #         for line in content:
@@ -641,38 +729,8 @@ write_csv('denorm_products.csv', d_products)
 #         return data
 #
 #
-# def read_orders(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_PEDIDO):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_PEDIDO))
-#                 continue
-#
-#             key = strip_string(parts[0])
-#             shop_name = strip_string(parts[1])
-#             product_code = strip_string(parts[2])
-#             order_price = strip_number(parts[3])
-#             order_amount = int(strip_number(parts[4]))
-#             order_date = strip_date(parts[5])
-#             delivered_amount = int(strip_number(parts[6]))
-#             delivered_date = strip_date(parts[7])
-#             value = [shop_name, product_code, order_price, order_amount, order_date, delivered_amount, delivered_date]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
 # def read_ticket_header(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
+#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
 #         data = {}
 #         lines = 0
 #         for line in content:
@@ -709,7 +767,7 @@ write_csv('denorm_products.csv', d_products)
 #
 #
 # def read_ticket_lines(filename):
-#     with open('{path}/{filename}'.format(path=FILEPATH, filename=filename)) as content:
+#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
 #         data = {}
 #         lines = 0
 #         for line in content:
@@ -739,35 +797,6 @@ write_csv('denorm_products.csv', d_products)
 #         return data
 #
 #
-#
-# """ Add attributes functions """
-#
-#
-# def add_country_attributes(dataset):
-#     COLUMNS_PAIS.append("densidad_pobl_pais")  # In people/km2
-#     for attributes in dataset.values():
-#         density = round(float(attributes[1]) / attributes[0], 1)
-#         attributes.append(density)
-#
-#
-
-#
-#
-
-#
-#
-#
-# def add_order_attributes(dataset):
-#     COLUMNS_PEDIDO.append("excfal_pedido")  # exceso o falta de mercancia entregada
-#     for attributes in dataset.values():
-#         excfal = attributes[5] - attributes[3]
-#         attributes.append(excfal)
-#     COLUMNS_PEDIDO.append("tiempo_entrega_pedido")  # Tiempo transcurrido desde el pedido hasta la entrega
-#     for attributes in dataset.values():
-#         delay = abs((attributes[6] - attributes[4]).days)
-#         attributes.append(delay)
-#
-#
 # """ Debug """
 #
 #
@@ -779,17 +808,6 @@ write_csv('denorm_products.csv', d_products)
 # ##############################################
 # ### READ, CHECK, FORMAT AND ADD ATTRIBUTES ###
 # ##############################################
-# # Regions
-# regions = read_region('regiongeografica.cvs')
-# # Countries
-# countries = read_pais('pais.cvs')
-# add_country_attributes(countries)
-# test_key_existence(regions.keys(), 'region', countries, 'pais.cvs', 2)
-# # Shops
-# shops = read_tienda('tienda.cvs')
-# test_key_existence(countries.keys(), 'pais', shops, 'tienda.cvs', 3)
-#
-
 # # Promotion
 # promotions = read_promocion('promocion.cvs')
 # test_key_existence(families.keys(), 'familia', promotions, 'promocion.cvs', 5)
@@ -797,16 +815,10 @@ write_csv('denorm_products.csv', d_products)
 # test_key_existence(shops.keys(), 'tienda', promotions, 'promocion.cvs', 7)
 # test_key_existence(regions.keys(), 'region', promotions, 'promocion.cvs', 8)
 # test_key_existence(countries.keys(), 'pais', promotions, 'promocion.cvs', 9)
-
 # # Client
 # clients = read_cliente('cliente.cvs')
 # test_key_existence(regions.keys(), 'region', clients, 'cliente.cvs', 7)
 # test_key_existence(countries.keys(), 'pais', clients, 'cliente.cvs', 8)
-# # # Order
-# # orders = read_orders('pedido.cvs')
-# # add_order_attributes(orders)
-# # test_key_existence(shops.keys(), 'tienda', orders, 'pedido.cvs', 0)
-# # test_key_existence(products.keys(), 'producto', orders, 'pedido.cvs', 1)
 # # Ticket header
 # ticket_header = read_ticket_header('cabeceraticket.cvs')
 # test_key_existence(shops.keys(), 'tienda', ticket_header, 'cabeceraticket.cvs', 0)
