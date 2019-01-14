@@ -50,32 +50,44 @@ nocolnull[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),arr.ind
 results <- rep(0, 10)
 for (i in c(2,3,4,5,6,7,8,9,10))
 {
-  pam_fit <- pam(gower_dist, diss = TRUE, k = i)
-  results[i] <- pam_fit$silinfo$avg.width
+ pam_fit <- pam(gower_dist, diss = TRUE, k = i)
+ results[i] <- pam_fit$silinfo$avg.width
 }
 plot(2:10,results[2:10],type="o",col="blue",pch=0,xlab="Numero de clusters",ylab="Silueta")
+# K=3 is optimal
+pam_fit <- pam(gower_dist, diss = TRUE, k = 3)
 
-# Clustering without rows with NULL
-norownull <- filter(filteredData, numero_hijos_cliente!="NULL" & estado_civil_cliente != "NULL")
-colSums(norownull=="NULL", na.rm=T)
+# Visualization
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
 
-# Use Gower distance for dissimilarity matrix
-gower_dist <- daisy(norownull, metric = "gower", type = list(logratio = 3))
-summary(gower_dist)
+tsne_data <- tsne_obj$Y %>% data.frame() %>% setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering), name = data$codigo_cliente)
 
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster))
+
+# # Not optimal
+# # Clustering without rows with NULL
+# norownull <- filter(filteredData, numero_hijos_cliente!="NULL" & estado_civil_cliente != "NULL")
+# colSums(norownull=="NULL", na.rm=T)
+#
+# # Use Gower distance for dissimilarity matrix
+# gower_dist <- daisy(norownull, metric = "gower", type = list(logratio = 3))
+# summary(gower_dist)
+#
 # Sanity check
-gower_mat <- as.matrix(gower_dist)
+# gower_mat <- as.matrix(gower_dist)
+#
+# # Most similar
+# norownull[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]), arr.ind = TRUE)[1, ], ]
+#
+# # Most different
+# norownull[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),arr.ind = TRUE)[1, ], ]
+#
+# results <- rep(0, 10)
+# for (i in c(2,3,4,5,6,7,8,9,10))
+# {
+#   pam_fit <- pam(gower_dist, diss = TRUE, k = i)
+#   results[i] <- pam_fit$silinfo$avg.width
+# }
+# plot(2:10,results[2:10],type="o",col="blue",pch=0,xlab="Numero de clusters",ylab="Silueta")
 
-# Most similar
-norownull[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]), arr.ind = TRUE)[1, ], ]
-
-# Most different
-norownull[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),arr.ind = TRUE)[1, ], ]
-
-results <- rep(0, 10)
-for (i in c(2,3,4,5,6,7,8,9,10))
-{
-  pam_fit <- pam(gower_dist, diss = TRUE, k = i)
-  results[i] <- pam_fit$silinfo$avg.width
-}
-plot(2:10,results[2:10],type="o",col="blue",pch=0,xlab="Numero de clusters",ylab="Silueta")
