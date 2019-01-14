@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import csv
-import unidecode
+import unidecode  # pip install unidecode
 
 from datetime import date, datetime
+from dateutil.relativedelta import *  # pip install python-dateutil
 
 """ Constants """
 
@@ -521,6 +522,7 @@ COLUMNS_ORDER = ['codigo_pedido', 'tienda_pedido', 'codigo_producto_pedido',
                  'fecha_solicitud_pedido', 'cantidad_entregada_pedido', 
                  'fecha_entrega_pedido']
 
+
 def read_shops(filename):
     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
         data = {}
@@ -583,6 +585,7 @@ def read_orders(filename):
 
 """ Add attributes functions """
 
+
 def add_order_attributes(dataset):
     COLUMNS_ORDER.append("excfal_pedido")  # exceso o falta de mercancia entregada
     for attributes in dataset.values():
@@ -635,6 +638,75 @@ if not join_check(d_orders, orders, COLUMNS_ORDER,
     join_error('Pedido', 'Tienda')
 
 write_csv('denorm_orders.csv', d_orders)
+
+
+# ####################################
+# ### CLIENT ENTITY DENORMALIZATION ###
+# ####################################
+
+COLUMNS_CLIENT = ['codigo_cliente', 'nombre_cliente', 'sexo_cliente',
+                  'fecha_nacimiento_cliente', 'estado_civil_cliente',
+                  'direccion_cliente', 'profesion_cliente', 'numero_hijos_cliente',
+                  'region_cliente', 'nacionalidad_cliente', 'total_compras_cliente',
+                  'puntos_acumulados_cliente']
+
+
+def read_client(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            parts = process_commas(parts, line, 4, 5, '",', True)
+            parts = process_commas(parts, line, 5, 6, '",', True)
+            if len(parts) != len(COLUMNS_CLIENT):
+                line_length_error(filename, line, len(parts), len(COLUMNS_CLIENT))
+                continue
+
+            key = strip_string(parts[0])
+            name = strip_string(parts[1])  # NULLABLE
+            gender = strip_string(parts[2])  # NULLABLE
+            birthdate = strip_date(parts[3])  # NULLABLE
+            civil_state = strip_string(parts[4])  # NULLABLE
+            address = strip_string(parts[5])  # NULLABLE
+            profession = strip_string(parts[6])  # NULLABLE
+            num_children = strip_number(parts[7])  # NULLABLE --> Change to int later on
+            region = strip_string(parts[8])  # NULLABLE
+            nationality = strip_string(parts[9])  # NULLABLE
+            total_buys = strip_number(parts[10])  # NULLABLE --> Change to int later on
+            total_points_acc = strip_number(parts[11])  # NULLABLE --> Change to int later on
+            value = [name, gender, birthdate, civil_state, address, profession, num_children, region,
+                     nationality, total_buys, total_points_acc]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+def add_client_attributes(dataset):
+    COLUMNS_CLIENT.append("edad_cliente")  # Age in years
+    for attributes in dataset.values():
+        # Calculate difference of dates in days
+        age = relativedelta(datetime.today().date(), attributes[2]).years
+        attributes.append(age)
+        
+
+# Client
+clients = read_client('cliente.cvs')
+add_client_attributes(clients)
+test_key_existence(regions.keys(), 'region', clients, 'cliente.cvs', 7)
+test_key_existence(countries.keys(), 'pais', clients, 'cliente.cvs', 8)
+
+# Generate dictionaries for the datasets
+d_clients = generate_dict('cliente', clients, COLUMNS_CLIENT)
+
+# Guardar el dataset
+write_csv('denorm_clients.csv', d_clients)
 
 # ######################################
 # ### XXXXXXX ENTITY DENORMALIZATION ###
@@ -692,41 +764,7 @@ write_csv('denorm_orders.csv', d_orders)
 
 #
 #
-# def read_cliente(filename):
-#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             parts = process_commas(parts, line, 4, 5, '",', True)
-#             parts = process_commas(parts, line, 5, 6, '",', True)
-#             if len(parts) != len(COLUMNS_CLIENTE):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_CLIENTE))
-#                 continue
-#
-#             key = strip_string(parts[0])
-#             name = strip_string(parts[1])  # NULLABLE
-#             gender = strip_string(parts[2])  # NULLABLE
-#             birthdate = strip_date(parts[3])  # NULLABLE
-#             civil_state = strip_string(parts[4])  # NULLABLE
-#             address = strip_string(parts[5])  # NULLABLE
-#             profession = strip_string(parts[6])  # NULLABLE
-#             num_children = strip_number(parts[7])  # NULLABLE --> Change to int later on
-#             region = strip_string(parts[8])  # NULLABLE
-#             nationality = strip_string(parts[9])  # NULLABLE
-#             total_buys = strip_number(parts[10])  # NULLABLE --> Change to int later on
-#             total_points_acc = strip_number(parts[11])  # NULLABLE --> Change to int later on
-#             value = [name, gender, birthdate, civil_state, address, profession, num_children, region,
-#                      nationality, total_buys, total_points_acc]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
+
 #
 #
 # def read_ticket_header(filename):
@@ -815,10 +853,6 @@ write_csv('denorm_orders.csv', d_orders)
 # test_key_existence(shops.keys(), 'tienda', promotions, 'promocion.cvs', 7)
 # test_key_existence(regions.keys(), 'region', promotions, 'promocion.cvs', 8)
 # test_key_existence(countries.keys(), 'pais', promotions, 'promocion.cvs', 9)
-# # Client
-# clients = read_cliente('cliente.cvs')
-# test_key_existence(regions.keys(), 'region', clients, 'cliente.cvs', 7)
-# test_key_existence(countries.keys(), 'pais', clients, 'cliente.cvs', 8)
 # # Ticket header
 # ticket_header = read_ticket_header('cabeceraticket.cvs')
 # test_key_existence(shops.keys(), 'tienda', ticket_header, 'cabeceraticket.cvs', 0)
