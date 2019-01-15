@@ -62,6 +62,14 @@ def join_error(orig_dataset, extra_dataset):
     ))
 
 
+""" Debug """
+
+
+def print_dict(dictionary):
+    for key, value in dictionary.items():
+        print('Key: {key} Value: {value}'.format(key=key, value=value))
+
+
 """ Util functions """
 
 
@@ -114,24 +122,29 @@ def process_commas(parts, line, index, replace_index=None, split_char='","',
     return parts
 
 
-def generate_dict(dataset_name, dataset, columns):
+def generate_dict(dataset_name, dataset, columns, include_header=False):
     ddataset = {}
     for key, values in dataset.items():
-        if (len(values) + 1) != len(columns):
-            line_length_error(dataset_name, [key, values], len(values) + 1,
+        len_values = len(values) + 1 if not include_header else len(values)
+        if len_values != len(columns):
+            line_length_error(dataset_name, [key, values], len_values,
                               len(columns))
             continue
         elem = {}
         elem[columns[0]] = key
-        for i in range(0, len(values)):
-            elem[columns[i + 1]] = values[i]
+        if not include_header:
+            for i in range(0, len(values)):
+                elem[columns[i + 1]] = values[i]
+        else:
+            for i in range(0, len(values)-1):
+                elem[columns[i + 1]] = values[i+1]
         ddataset[key] = elem
     return ddataset
 
 
-def write_csv(filename, dataset):
+def write_csv(filename, dataset, mode='wb'):
     with open('{path}/{filename}'.format(path=OUTPUT_PATH, filename=filename),
-              'wb') as output:
+              mode) as output:
         rows = dataset.values()
         writer = csv.DictWriter(output, rows[0].keys())
         writer.writeheader()
@@ -158,7 +171,7 @@ def join_datasets(origin_dataset, extra_dataset, origin_column, extra_column=Non
             data.update(extra_data)
         except KeyError:
             # TODO: Log properly
-            print("WARN: KeyError happened")
+            # print("WARN: KeyError happened")
             # TODO: boolean check to log WARN if not found when NOT NULLABLE
             test = list(extra_dataset.values())[0].keys()
             dummy = dict((column, NULL_STRING) for column in test)
@@ -708,74 +721,149 @@ d_clients = generate_dict('cliente', clients, COLUMNS_CLIENT)
 # Guardar el dataset
 write_csv('denorm_clients.csv', d_clients)
 
-# ######################################
-# ### XXXXXXX ENTITY DENORMALIZATION ###
-# ######################################
-# COLUMNS_PROMOCION = ['nombre', 'tipo', 'coste', 'fecha inicio', 'fecha fin',
-#                      'codigo producto', 'familia', 'seccion', 'tienda', 'region', 'pais']
+# ##########################################
+# ### TICKET LINE ENTITY DENORMALIZATION ###
+# ##########################################
+
+COLUMNS_PROMOTION = ['nombre_promocion', 'tipo_promocion', 'coste_promocion',
+                     'fecha_inicio_promocion', 'fecha_fin_promocion',
+                     'codigo_producto_promocion', 'familia_promocion',
+                     'seccion_promocion', 'tienda_promocion', 'region_promocion',
+                     'pais_promocion']
+
+COLUMNS_TICKET_LINE = ['codigo_tl', 'codigo_venta_tl', 'tienda_tl', 'codigo_producto_tl',
+                       'cantidad_tl', 'precio_venta_tl', 'promocion_tl', 'codigo_cabecer_tl']
+
+
+def read_promotions(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            if len(parts) != len(COLUMNS_PROMOTION):
+                line_length_error(filename, line, len(parts), len(COLUMNS_PROMOTION))
+                continue
+            key = strip_string(parts[0])
+            promotion_type = strip_string(parts[1])
+            cost = strip_number(parts[2])  # NULLABLE --> Change to int later on
+            start_date = strip_date(parts[3])
+            end_date = strip_date(parts[4])
+            product_code = strip_string(parts[5])
+            family = strip_string(parts[6])  # NULLABLE
+            section = strip_string(parts[7])  # NULLABLE
+            shop = strip_string(parts[8])  # NULLABLE
+            region = strip_string(parts[9])  # NULLABLE
+            country = strip_string(parts[10])  # NULLABLE
+            value = [promotion_type, cost, start_date, end_date, product_code, family, section, shop, region, country]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+"""
+Order code and header code are wrongly named from the data given. The last field 'codigo cabecera' is not used.
+It can be crosschecked with the foreign keys of the db2 file. The header code is the second field 'codigo venta'.
+"""
+
+
+def read_ticket_lines(filename):
+    with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
+        data = {}
+        lines = 0
+        for line in content:
+            lines += 1
+            parts = line.split(',')
+            if len(parts) != len(COLUMNS_TICKET_LINE):
+                line_length_error(filename, line, len(parts), len(COLUMNS_TICKET_LINE))
+                continue
+
+            line = strip_string(parts[0])
+            header_code = strip_string(parts[1])
+            key = '{line}-{header}'.format(line=line, header=header_code)
+            shop_name = strip_string(parts[2])
+            product_code = strip_string(parts[3])
+            amount = strip_number(parts[4])
+            price = strip_number(parts[5])
+            promotion_name = strip_string(parts[6])  # NULLABLE
+            header_code_spare = strip_number(parts[7])
+            value = [line, header_code, shop_name, product_code, amount, price, promotion_name, header_code_spare]
+            if key in data.keys():
+                repeated_key_error(filename, key, data[key], value)
+            data[key] = value
+            if lines % 10000 == 0:
+                print(lines)
+
+        if lines != len(data):
+            file_data_legth_mismatch_error(filename, lines, len(data))
+
+        return data
+
+
+# Promotion
+promotions = read_promotions('promocion.cvs')
+test_key_existence(families.keys(), 'familia', promotions, 'promocion.cvs', 5)
+test_key_existence(sections.keys(), 'seccion', promotions, 'promocion.cvs', 6)
+test_key_existence(shops.keys(), 'tienda', promotions, 'promocion.cvs', 7)
+test_key_existence(regions.keys(), 'region', promotions, 'promocion.cvs', 8)
+test_key_existence(countries.keys(), 'pais', promotions, 'promocion.cvs', 9)
+# Ticket line
+# Too much memory consumption. File divided in several by split in bash
+# E.g. split -l 20000 lineasticket.cvs
+files = ['xaa', 'xab', 'xac', 'xad', 'xae', 'xaf', 'xag', 'xah', 'xai']
+ticket_lines_global = {}
+for file in files:
+    ticket_lines = read_ticket_lines('lineasticket/{file}'.format(file=file))
+    test_key_existence(shops.keys(), 'tienda', ticket_lines, 'lineasticket.cvs', 2)
+    test_key_existence(products.keys(), 'producto', ticket_lines, 'lineasticket.cvs', 3)
+    test_key_existence(promotions.keys(), 'promocion', ticket_lines, 'lineasticket.cvs', 6)
+    ticket_lines_global.update(ticket_lines)
+
+# Generate dictionaries for the datasets
+d_promotions = generate_dict('promocion', promotions, COLUMNS_PROMOTION)
+d_ticket_lines = generate_dict('linea ticket', ticket_lines_global, COLUMNS_TICKET_LINE,
+                               include_header=True)
+
+# Denormalize promotions into ticket lines
+join_datasets(d_ticket_lines, d_promotions, 'promocion_tl')
+if not join_check(d_ticket_lines, ticket_lines_global, COLUMNS_TICKET_LINE,
+                  COLUMNS_PROMOTION):
+    join_error('Linea Ticket', 'Promocion')
+
+# Denormalize products into ticket lines
+join_datasets(d_ticket_lines, d_products, 'codigo_producto_tl')
+if not join_check(d_ticket_lines, ticket_lines_global, COLUMNS_TICKET_LINE,
+                  COLUMNS_PROMOTION + COLUMNS_PRODUCT + COLUMNS_PROVIDER +
+                  COLUMNS_SUBFAMILY + COLUMNS_FAMILY + COLUMNS_SECTION):
+
+    join_error('Linea Ticket', 'Promocion')
+# Guardar el dataset
+write_csv('denorm_ticket_line.csv', d_ticket_lines)
+
+# ############################################
+# ### TICKET HEADER ENTITY DENORMALIZATION ###
+# ############################################
+
 #
-# COLUMNS_CLIENTE = ['codigo', 'nombre', 'sexo', 'fecha nacimiento', 'estado civil', 'direccion',
-#                    'profesion', 'numero hijos', 'region', 'nacionalidad', 'total compras', ' puntos acumulados']
-#
-#
-#
-# COLUMNS_CABECERA_TICKET = ['codigo de venta', 'tienda', 'fecha', 'hora',
+# COLUMNS_TICKET_HEADER = ['codigo de venta', 'tienda', 'fecha', 'hora',
 #                            'forma pago', 'codigo cliente', 'importe total', 'total unidades', 'puntos ticket']
 #
-# COLUMNS_LINEA_TICKET = ['codigo', 'codigo venta', 'tienda', 'codigo producto',
-#                         'cantidad', 'precio venta', 'promocion', 'codigo cabecera']
 #
-#
-#
-#
-# """ Read files """
-# def read_promocion(filename):
+# def read_ticket_headers(filename):
 #     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
 #         data = {}
 #         lines = 0
 #         for line in content:
 #             lines += 1
 #             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_PROMOCION):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_PROMOCION))
-#                 continue
-#             key = strip_string(parts[0])
-#             promotion_type = strip_string(parts[1])
-#             cost = strip_number(parts[2])  # NULLABLE --> Change to int later on
-#             start_date = strip_date(parts[3])
-#             end_date = strip_date(parts[4])
-#             product_code = strip_string(parts[5])
-#             family = strip_string(parts[6])  # NULLABLE
-#             section = strip_string(parts[7])  # NULLABLE
-#             shop = strip_string(parts[8])  # NULLABLE
-#             region = strip_string(parts[9])  # NULLABLE
-#             country = strip_string(parts[10])  # NULLABLE
-#             value = [promotion_type, cost, start_date, end_date, product_code, family, section, shop, region, country]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
-
-#
-#
-
-#
-#
-# def read_ticket_header(filename):
-#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_CABECERA_TICKET):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_CABECERA_TICKET))
+#             if len(parts) != len(COLUMNS_TICKET_HEADER):
+#                 line_length_error(filename, line, len(parts), len(COLUMNS_TICKET_HEADER))
 #                 continue
 #
 #             key = strip_string(parts[0])
@@ -798,68 +886,10 @@ write_csv('denorm_clients.csv', d_clients)
 #         return data
 #
 #
-# """
-# Order code and header code are wrongly named from the data given. The last field 'codigo cabecera' is not used.
-# It can be crosschecked with the foreign keys of the db2 file. The header code is the second field 'codigo venta'.
-# """
-#
-#
-# def read_ticket_lines(filename):
-#     with open('{path}/{filename}'.format(path=FILE_PATH, filename=filename)) as content:
-#         data = {}
-#         lines = 0
-#         for line in content:
-#             lines += 1
-#             parts = line.split(',')
-#             if len(parts) != len(COLUMNS_LINEA_TICKET):
-#                 line_length_error(filename, line, len(parts), len(COLUMNS_LINEA_TICKET))
-#                 continue
-#
-#             line = strip_string(parts[0])
-#             header_code = strip_string(parts[1])
-#             key = '{line}-{header}'.format(line=line, header=header_code)
-#             shop_name = strip_string(parts[2])
-#             product_code = strip_string(parts[3])
-#             amount = strip_number(parts[4])
-#             price = strip_number(parts[5])
-#             promotion_name = strip_string(parts[6])  # NULLABLE
-#             header_code_spare = strip_number(parts[7])
-#             value = [line, header_code, shop_name, product_code, amount, price, promotion_name, header_code_spare]
-#             if key in data.keys():
-#                 repeated_key_error(filename, key, data[key], value)
-#             data[key] = value
-#
-#         if lines != len(data):
-#             file_data_legth_mismatch_error(filename, lines, len(data))
-#
-#         return data
-#
-#
-# """ Debug """
-#
-#
-# def print_dict(dictionary):
-#     for key, value in dictionary.items():
-#         print('Key: {key} Value: {value}'.format(key=key, value=value))
-#
-#
-# ##############################################
-# ### READ, CHECK, FORMAT AND ADD ATTRIBUTES ###
-# ##############################################
-# # Promotion
-# promotions = read_promocion('promocion.cvs')
-# test_key_existence(families.keys(), 'familia', promotions, 'promocion.cvs', 5)
-# test_key_existence(sections.keys(), 'seccion', promotions, 'promocion.cvs', 6)
-# test_key_existence(shops.keys(), 'tienda', promotions, 'promocion.cvs', 7)
-# test_key_existence(regions.keys(), 'region', promotions, 'promocion.cvs', 8)
-# test_key_existence(countries.keys(), 'pais', promotions, 'promocion.cvs', 9)
 # # Ticket header
-# ticket_header = read_ticket_header('cabeceraticket.cvs')
+# ticket_header = read_ticket_headers('cabeceraticket.cvs')
 # test_key_existence(shops.keys(), 'tienda', ticket_header, 'cabeceraticket.cvs', 0)
 # test_key_existence(clients.keys(), 'cliente', ticket_header, 'cabeceraticket.cvs', 4)
-# # Ticket line
-# ticket_line = read_ticket_lines('lineasticket.cvs')
+#
+# # Test ticket lines agains headers
 # test_key_existence(ticket_header.keys(), 'cabeceraticket', ticket_line, 'lineasticket.cvs', 1)
-# test_key_existence(shops.keys(), 'tienda', ticket_line, 'lineasticket.cvs', 2)
-# test_key_existence(products.keys(), 'producto', ticket_line, 'lineasticket.cvs', 3)
-# test_key_existence(promotions.keys(), 'promocion', ticket_line, 'lineasticket.cvs', 6)
