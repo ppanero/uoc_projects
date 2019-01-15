@@ -142,23 +142,6 @@ def generate_dict(dataset_name, dataset, columns, include_header=False):
     return ddataset
 
 
-def write_csv(filename, dataset, mode='wb'):
-    with open('{path}/{filename}'.format(path=OUTPUT_PATH, filename=filename),
-              mode) as output:
-        rows = dataset.values()
-        writer = csv.DictWriter(output, rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-""" Debug functions"""
-
-
-def print_dict(dictionary):
-    for key, value in dictionary.items():
-        print('Key: {key} Value: {value}'.format(key=key, value=value))
-
-
 # extra_column in case the origin_column is not the key of the extra_dataset
 # NOT IMPLEMENTED YET (specified by extra_is_key boolean)
 def join_datasets(origin_dataset, extra_dataset, origin_column, extra_column=None,
@@ -176,6 +159,15 @@ def join_datasets(origin_dataset, extra_dataset, origin_column, extra_column=Non
             test = list(extra_dataset.values())[0].keys()
             dummy = dict((column, NULL_STRING) for column in test)
             data.update(dummy)
+
+
+def write_csv(filename, dataset, mode='wb'):
+    with open('{path}/{filename}'.format(path=OUTPUT_PATH, filename=filename),
+              mode) as output:
+        rows = dataset.values()
+        writer = csv.DictWriter(output, rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 """Test functions """
