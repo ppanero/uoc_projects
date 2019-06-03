@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Parallel Sets</title>
+<style>
+@import url(css/d3.parsets.css);
+</style>
+
+<body>
+    <div id="vis"></div>
+    <div class="options">
+        <span class="curves">
+            <label for="curved">
+                <input 
+                    type="checkbox" 
+                    id="curved"
+                    onchange="curves.call(this)"
+                >
+                ¿Curvas?
+            </label>
+        </span>
+    </div>
+
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="./js/d3.parsets.js"></script>
+    <script src="./js/parallel-sets_base.js"></script>
+</body>
